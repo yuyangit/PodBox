@@ -1,12 +1,40 @@
 #!/usr/bin/ruby
+require 'uri'
+# 参数
+# :name, :names,
+# :git, :git_format,
+# :root_path, :path, :path_format,
+# :branch, :tag, :version,
+# :method,
 
-# 本地有存在目录（判断podspec是否对应） 则取本地目录 否则取远端
+# 使用说明 
+# 如果有method 则使用method对应的方式请求模块
+# 如果配置中数据匹配对应method失败 则使用默认规则
+# method            { (必选参数), [ 可选参数 ] }
+# DEFAULT           LOCAL
+# LOCAL             { ( (:name || :names),), [:path, :root_path, :path_format] }
+# REMOTE_GIT        { ( (:name || :names), :git), [:git_format] }
+# REMOTE_VERSION    { ( (:name || :names), :git), [:version] }
+# REMOTE_BRANCH     { ( (:name || :names), :git), [:branch='master'] }
+# REMOTE_TAG        { ( (:name || :names), :git, :tag), [] }
+
+# 默认规则 
+# 如果配置中有git地址， 优先使用git地址， 
+# 如果git地址不存在， 则根据名字判断本地模块目录(当前用户模块根目录地址+模块名字)是否存在,
+# 如果本地模块根目录存在, 则LOCAL（pod 'name' :path => 'path'） 
+# 如果本地模块根目录不存在 则REMOTE_VERSION（pod 'name' || pod 'name' 'version'）
+# DEFAULT           LOCAL
+# LOCAL             ( pod 'name' :path => 'path' )
+# REMOTE_GIT        ( pod 'name' :git => 'git' :branch => 'master' )
+# REMOTE_VERSION    ( pod 'name' || pod 'name' 'version')
+# REMOTE_BRANCH     ( pod 'name' :git => 'git' :branch => 'branch' )
+# REMOTE_TAG        ( pod 'name' :git => 'git' :tag => 'tag' )
 
 # method
 DEFAULT = 0
 LOCAL = 1
-REMOTE = 2
-REMOTE_ORIGINAL = 3
+REMOTE_GIT = 2
+REMOTE_VERSION = 3
 REMOTE_BRANCH = 4
 REMOTE_TAG = 5
 
@@ -21,6 +49,7 @@ class PBPodModule
     @@member_modules = {
     }
 
+    #   成员配置 => { 门牌 => { 项目名称, 获取方式, 分支，目标， 版本，} } 匹配全部项目配置 个人配置替换全局配置
     @@member_configs = [
     ]
 
@@ -28,7 +57,6 @@ class PBPodModule
         @@all_modules = all_modules
         @@member_modules = member_modules
         @@member_configs = member_configs
-        self.run
     end
 
     def current_member
@@ -55,7 +83,7 @@ class PBPodModule
         end
         return @current_member_modules
     end
-    
+
     # 从列表中搜索得到对应配置
     def module_for_name(name, module_list)
 
@@ -163,7 +191,6 @@ class PBPodModule
         if name != nil && name.split("/") != nil && name.split("/").length > 0
             git_name = name.split("/")[0]
         end
-        path_name = git_name
         
         name_condition = (name != nil && name.length > 0)
         if name_condition == false
@@ -180,7 +207,7 @@ class PBPodModule
         else
             git = nil
         end
-        
+
         path = source_module[:path]
         root_path_condition = (source_module[:root_path] != nil && source_module[:root_path].length > 0)
         path_condition = (path != nil && path.length > 0)
@@ -188,9 +215,9 @@ class PBPodModule
         if path_condition
             path = path
         elsif path_format_condition
-            path = source_module[:path_format].gsub(/\#\{path_name\}/, "\#\{path_name\}" => path_name)
+            path = source_module[:path_format].gsub(/\#\{git_name\}/, "\#\{git_name\}" => git_name)
         elsif root_path_condition
-            path = File.join(source_module[:root_path], path_name)
+            path = File.join(source_module[:root_path], git_name)
         else
             path = nil
         end
@@ -205,18 +232,27 @@ class PBPodModule
         version_condition = (version != nil && version.length > 0)
         
         target_method = DEFAULT
-        if path != nil && path.length > 0 && File.exist?(path)
-            target_method = LOCAL
+        if path != nil && path.length > 0
+            if File.exist?(path)
+                target_method = LOCAL
+            else
+                target_method = REMOTE_VERSION
+            end
         elsif git != nil && git.length > 0
             if branch_condition
                 target_method = REMOTE_BRANCH
             elsif tag_condition
                 target_method = REMOTE_TAG
             else
-                target_method = REMOTE
+                target_method = REMOTE_GIT
             end
+        elsif version_condition
+            target_method = REMOTE_VERSION
         else
-            target_method = REMOTE_ORIGINAL
+            @current_member = self.current_member
+            @main_path = @current_member[:main_path]
+            path = File.join(@main_path, git_name)
+            target_method = LOCAL
         end
 
         case method
@@ -225,48 +261,46 @@ class PBPodModule
             if target_method != DEFAULT
                 self.module_with_method(target_method, source_module)
             else
-                self.module_with_method(REMOTE_ORIGINAL, source_module)
+                self.module_with_method(LOCAL, source_module)
             end
         when LOCAL
-            if ( name != nil && name.length > 0 ) && ( path != nil && path.length > 0 )
-                return "pod '#{name}' :path => '#{path}'"
-            else
-                self.module_with_method(REMOTE_ORIGINAL, source_module)
-            end
-        when REMOTE
-            if ( name != nil && name.length > 0 ) && ( git != nil && git.length > 0 )
-                return "pod '#{name}' :git => '#{git}'"
-            else
-                self.module_with_method(REMOTE_ORIGINAL, source_module)
-            end
-        when REMOTE_ORIGINAL
-            if ( name != nil && name.length > 0 )
-                if ( version != nil && version.length > 0 )
-                    return "pod '#{name}', '#{version}'"
-                else
-                    return "pod '#{name}'"
+            if ( path != nil && path.length > 0 ) 
+                if File.exist?(path)
+                    return "pod '#{name}', :path => '#{path}'"
                 end
             else
-                return nil
+                self.module_with_method(REMOTE_VERSION, source_module)
+            end
+        when REMOTE_GIT
+            if ( git != nil && git.length > 0 )
+                return "pod '#{name}', :git => '#{git}', :branch => 'master'"
+            else
+                self.module_with_method(LOCAL, source_module)
+            end
+        when REMOTE_VERSION
+            if ( version != nil && version.length > 0 )
+                return "pod '#{name}', '#{version}'"
+            else
+                return "pod '#{name}'"
             end
         when REMOTE_BRANCH
-            if ( name != nil && name.length > 0 ) && ( git != nil && git.length > 0 ) && ( branch != nil && branch.length > 0 )
-                return "pod '#{name}' :git => '#{git}' :branch => '#{branch}'"
+            if ( git != nil && git.length > 0 ) && ( branch != nil && branch.length > 0 )
+                return "pod '#{name}', :git => '#{git}', :branch => '#{branch}'"
             else
-                self.module_with_method(REMOTE_ORIGINAL, source_module)
+                self.module_with_method(LOCAL, source_module)
             end
         when REMOTE_TAG
-            if ( name != nil && name.length > 0 ) && ( git != nil && git.length > 0 ) && ( tag != nil && tag.length > 0 )
-                return "pod '#{name}' :git => '#{git}' :tag => '#{tag}'"
+            if ( git != nil && git.length > 0 ) && ( tag != nil && tag.length > 0 )
+                return "pod '#{name}', :git => '#{git}', :tag => '#{tag}'"
             else
-                self.module_with_method(REMOTE_ORIGINAL, source_module)
+                self.module_with_method(LOCAL, source_module)
             end
         else
-            self.module_with_method(REMOTE_ORIGINAL, source_module)
+            self.module_with_method(LOCAL, source_module)
         end
     end
 
-    def run
+    def generate
         @run_modules = []
         # 获取当前成员信息
         @current_member = self.current_member
@@ -283,19 +317,19 @@ class PBPodModule
                     source_module = m
                     target_module = self.module_for_name(n, @current_member_modules)
                     mod = self.combine_modules(source_module, target_module, name)
+                    if mod != nil && mod.length > 0
+                        @run_modules << mod
+                    end
                 end
             else
                 target_module = self.module_for_name(n, @current_member_modules)
                 mod = self.combine_modules(source_module, target_module, name)
-            end
-            
-            if mod != nil
-                @run_modules << mod
+                if mod != nil && mod.length > 0
+                    @run_modules << mod
+                end
             end
         end
-
-        puts @run_modules
-
+        return @run_modules
     end
 
 end
