@@ -251,8 +251,21 @@ class PBPodModule
         else
             @current_member = self.current_member
             @main_path = @current_member[:main_path]
-            path = File.join(@main_path, git_name)
-            target_method = LOCAL
+            if @main_path != nil && File.exist?(@main_path) == false
+                if @current_member[:pathes] != nil && @current_member[:pathes].length > 0
+                    @current_member[:pathes].each do | sub_path |
+                        if File.exist?(sub_path)
+                            @main_path = sub_path
+                        end
+                    end
+                end
+            end
+            if @main_path != nil && @main_path.length > 0
+                path = File.join(@main_path, git_name)
+                target_method = LOCAL
+            else
+                target_method = REMOTE_VERSION
+            end
         end
 
         case method
