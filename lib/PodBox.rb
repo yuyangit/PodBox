@@ -61,14 +61,9 @@ class PBPodModule
 
     def current_member
         @@member_configs.each do | c |
-            if File.exist?(c[:main_path])
-            then
-                return c
-            else
-                c[:pathes].each do | p |
-                    if File.exist?(p)
-                        return c
-                    end
+            c[:pathes].each do | p |
+                if File.exist?(p)
+                    return c
                 end
             end
         end
@@ -191,6 +186,13 @@ def module_with_method(method=DEFAULT, source_module, current_member)
         path = File.join(source_module[:root_path], git_name)
     else
         path = nil
+        if current_member[:force_local] == true
+            current_member[:pathes].each do | p |
+                if File.exist?(File.join(p, git_name))
+                    path = File.join(p, git_name)
+                end
+            end
+        end
     end
     
     branch = source_module[:branch]
@@ -220,9 +222,19 @@ def module_with_method(method=DEFAULT, source_module, current_member)
     elsif version_condition
         target_method = REMOTE_VERSION
     else
-        @main_path = current_member[:main_path]
-        path = File.join(@main_path, git_name)
-        target_method = LOCAL
+        if path == nil || path.length == 0
+            current_member[:pathes].each do | p |
+                if File.exist?(File.join(p, git_name))
+                    path = File.join(p, git_name)
+                end
+            end
+        end
+        
+        if path != nil && path.length > 0
+            target_method = LOCAL
+        else
+            target_method = REMOTE_VERSION
+        end
     end
 
     case method
@@ -236,32 +248,33 @@ def module_with_method(method=DEFAULT, source_module, current_member)
     when LOCAL
         if ( path != nil && path.length > 0 ) 
             if File.exist?(path)
-                pod name, :path => path
+                pod "#{name}", :path => "#{path}"
             end
         else
             module_with_method(REMOTE_VERSION, source_module, current_member)
         end
     when REMOTE_GIT
         if ( git != nil && git.length > 0 )
-            pod name, :git => git, :branch => 'master'
+            puts "#{name} branch=>master, #{source_module}"
+            pod "#{name}", :git => "#{git}", :branch => 'master'
         else
             module_with_method(LOCAL, source_module, current_member)
         end
     when REMOTE_VERSION
         if ( version != nil && version.length > 0 )
-            pod name, version
+            pod "#{name}", "#{version}"
         else
-            pod name
+            pod "#{name}"
         end
     when REMOTE_BRANCH
         if ( git != nil && git.length > 0 ) && ( branch != nil && branch.length > 0 )
-            pod name, :git => git, :branch => branch
+            pod "#{name}", :git => "#{git}", :branch => "#{branch}"
         else
             module_with_method(LOCAL, source_module, current_member)
         end
     when REMOTE_TAG
         if ( git != nil && git.length > 0 ) && ( tag != nil && tag.length > 0 )
-            pod name, :git => git, :tag => tag
+            pod "#{name}", :git => "#{git}", :tag => "#{tag}"
         else
             module_with_method(LOCAL, source_module, current_member)
         end
@@ -316,18 +329,19 @@ def pod_box_module_run(pod_module)
     @current_member = pod_module.current_member
     # 获取成员信息对应的配置列表
     @current_member_modules = pod_module.current_member_modules
-    
+
     # 获取全部需要执行的模块
     pod_module.current_all_modules.each do | m |
         name = m[:name]
         mod = nil
         if name == nil || name.length == 0
-            
             m[:names].each do | n |
                 name = n
                 source_module = m
-                target_module = module_for_name(n, @current_member_modules)
-                
+                target_module = nil
+                if @current_member != nil && @current_member[:force_local] == true
+                    target_module = module_for_name(n, @current_member_modules)
+                end
                 mod = combine_modules(source_module, target_module, name, @current_member)
             end
         else
