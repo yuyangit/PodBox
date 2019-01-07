@@ -255,7 +255,6 @@ def module_with_method(method=DEFAULT, source_module, current_member)
         end
     when REMOTE_GIT
         if ( git != nil && git.length > 0 )
-            puts "#{name} branch=>master, #{source_module}"
             pod "#{name}", :git => "#{git}", :branch => 'master'
         else
             module_with_method(LOCAL, source_module, current_member)
@@ -267,14 +266,22 @@ def module_with_method(method=DEFAULT, source_module, current_member)
             pod "#{name}"
         end
     when REMOTE_BRANCH
-        if ( git != nil && git.length > 0 ) && ( branch != nil && branch.length > 0 )
-            pod "#{name}", :git => "#{git}", :branch => "#{branch}"
+        if ( git != nil && git.length > 0 )
+            if ( branch != nil && branch.length > 0 )
+                pod "#{name}", :git => "#{git}", :branch => "#{branch}"
+            else
+                pod "#{name}", :git => "#{git}", :branch => "master"
+            end
         else
             module_with_method(LOCAL, source_module, current_member)
         end
     when REMOTE_TAG
-        if ( git != nil && git.length > 0 ) && ( tag != nil && tag.length > 0 )
-            pod "#{name}", :git => "#{git}", :tag => "#{tag}"
+        if ( git != nil && git.length > 0 )
+            if ( tag != nil && tag.length > 0 )
+                pod "#{name}", :git => "#{git}", :tag => "#{tag}"
+            else
+                pod "#{name}", :git => "#{git}", :branch => "master"
+            end
         else
             module_with_method(LOCAL, source_module, current_member)
         end
