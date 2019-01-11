@@ -345,10 +345,7 @@ def pod_box_module_run(pod_module)
             m[:names].each do | n |
                 name = n
                 source_module = m
-                target_module = nil
-                if @current_member != nil && @current_member[:force_local] == true
-                    target_module = module_for_name(n, @current_member_modules)
-                end
+                target_module = module_for_name(n, @current_member_modules)
                 mod = combine_modules(source_module, target_module, name, @current_member)
             end
         else
